@@ -30,7 +30,10 @@ static class Program
         foreach (var result in results)
         {
             // log the relative address and read 16 bytes from the result
-            Log.Information("0x{Addr:X} {Read}", client.Base - result, BitConverter.ToString(mem.Read(result, 16)));
+            var bytes = new byte[16];
+            mem.Read(result, bytes);
+            var byteStr = string.Join('-', bytes.Select(b => b.ToString("X2")));
+            Log.Information("0x{Addr:X} {Read}", client.Base - result, byteStr);
         }
         
         mem.Close();

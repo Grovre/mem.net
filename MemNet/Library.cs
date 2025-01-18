@@ -237,7 +237,8 @@ public sealed class Memory : IDisposable
             if (bytesToRead <= 0)
                 break;
 
-            byte[] data = Read((IntPtr)currentOffset, (int)bytesToRead);
+            var data = new byte[bytesToRead];
+            Read((IntPtr)currentOffset, data);
 
             for (int i = 0; i <= data.Length - patternLength; i++)
             {
@@ -305,32 +306,24 @@ public sealed class Memory : IDisposable
     /// <exception cref="InvalidOperationException">Thrown if the process is not open.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if the size is 0 or negative.</exception>
     /// <exception cref="Win32Exception">Thrown if reading memory fails.</exception>
-    public byte[] Read(IntPtr address, int size)
+    public void Read(IntPtr address, Span<byte> span)
     {
-        _logger.Debug("Read {Size} bytes from 0x{Address:X16}.", size, address);
+        _logger.Debug("Read {Size} bytes from 0x{Address:X16}.", span.Length, address);
 
         if (_processHandle == IntPtr.Zero)
             throw new InvalidOperationException($"Process with ID {_processId} is not open.");
 
-
-        if (size <= 0)
-            throw new ArgumentOutOfRangeException(nameof(size), "Size must be non-negative.");
-
-        byte[] buffer = new byte[size];
-
-        if (!ReadProcessMemory(_processHandle, address, buffer, size, out var bytesRead))
+        if (!ReadProcessMemory(_processHandle, address, span, span.Length, out var bytesRead))
             throw new Win32Exception(Marshal.GetLastWin32Error(),
-                $"Failed to read {size} bytes from address 0x{address:X16} in process {_processId}.");
+                $"Failed to read {span.Length} bytes from address 0x{address:X16} in process {_processId}.");
 
-        if (bytesRead.ToInt64() != size)
+        if (bytesRead != span.Length)
         {
             throw new InvalidOperationException(
-                $"Failed to read {size} bytes from address 0x{address:X16} in process {_processId}. " +
-                $"Only {bytesRead.ToInt64()} bytes were read.");
+                $"Failed to read {span.Length} bytes from address 0x{address:X16} in process {_processId}. " +
+                $"Only {bytesRead} bytes were read.");
             // Array.Resize(ref buffer, bytesRead.ToInt64());
         }
-
-        return buffer;
     }
 
     /// <summary>
@@ -378,29 +371,24 @@ public sealed class Memory : IDisposable
     /// <exception cref="InvalidOperationException">Thrown if the process is not open.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown if the buffer is empty.</exception>
     /// <exception cref="Win32Exception">Thrown if writing memory fails.</exception>
-    public byte[] Write(IntPtr address, byte[] buffer)
+    public void Write(IntPtr address, ReadOnlySpan<byte> span)
     {
-        _logger.Debug("Write {Size} bytes to 0x{Address:X16}.", buffer.Length, address);
+        _logger.Debug("Write {Size} bytes to 0x{Address:X16}.", span.Length, address);
 
         if (_processHandle == IntPtr.Zero)
             throw new InvalidOperationException($"Process with ID {_processId} is not open.");
 
-        if (buffer.Length <= 0)
-            throw new ArgumentOutOfRangeException(nameof(buffer), "Buffer must be non-negative.");
-
-        if (!WriteProcessMemory(_processHandle, address, buffer, buffer.Length, out var bytesWritten))
+        if (!WriteProcessMemory(_processHandle, address, span, span.Length, out var bytesWritten))
             throw new Win32Exception(Marshal.GetLastWin32Error(),
-                $"Failed to write {buffer.Length} bytes to address 0x{address:X16} in process {_processId}.");
+                $"Failed to write {span.Length} bytes to address 0x{address:X16} in process {_processId}.");
 
-        if (bytesWritten.ToInt64() != buffer.Length)
+        if (bytesWritten != span.Length)
         {
             throw new InvalidOperationException(
-                $"Failed to write {buffer.Length} bytes to address 0x{address:X16} in process {_processId}. " +
-                $"Only {bytesWritten.ToInt64()} bytes were written.");
+                $"Failed to write {span.Length} bytes to address 0x{address:X16} in process {_processId}. " +
+                $"Only {bytesWritten} bytes were written.");
             // Array.Resize(ref buffer, bytesWritten.ToInt64());
         }
-
-        return buffer;
     }
 
     /// <summary>
@@ -502,11 +490,11 @@ public sealed class Memory : IDisposable
     private static extern bool CloseHandle(IntPtr hObject);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, [Out] byte[] lpBuffer,
+    private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, [Out] Span<byte> lpBuffer,
         int dwSize, out IntPtr lpNumberOfBytesRead);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, int dwSize,
+    private static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, ReadOnlySpan<byte> lpBuffer, int dwSize,
         out IntPtr lpNumberOfBytesWritten);
 
     /*
