@@ -269,21 +269,18 @@ public sealed class Memory : IDisposable
     /// <returns>The value read from memory.</returns>
     /// <exception cref="InvalidOperationException">Thrown if the process is not open.</exception>
     /// <exception cref="Win32Exception">Thrown if reading memory fails.</exception>
-    public T Read<T>(IntPtr address) where T : struct
+    public T Read<T>(IntPtr address) where T : unmanaged
     {
         _logger.Debug("Read {Type} from 0x{Address:X16}.", typeof(T), address);
 
         if (_processHandle == IntPtr.Zero)
             throw new InvalidOperationException($"Process with ID {_processId} is not open.");
 
-        int size = Marshal.SizeOf<T>();
-        byte[] buffer = new byte[size];
+        T v = default;
+        var span = MemoryMarshal.CreateSpan(ref v, 1);
+        Read(address, MemoryMarshal.AsBytes(span));
 
-        if (!ReadProcessMemory(_processHandle, address, buffer, size, out _))
-            throw new Win32Exception(Marshal.GetLastWin32Error(),
-                $"Failed to read memory from address 0x{address:X16} in process {_processId}.");
-
-        return Marshal.PtrToStructure<T>(Marshal.UnsafeAddrOfPinnedArrayElement(buffer, 0));
+        return v;
     }
     
     /// <summary>
@@ -334,32 +331,15 @@ public sealed class Memory : IDisposable
     /// <param name="value">The value to write.</param>
     /// <exception cref="InvalidOperationException">Thrown if the process is not open.</exception>
     /// <exception cref="Win32Exception">Thrown if writing memory fails.</exception>
-    public void Write<T>(IntPtr address, T value) where T : struct
+    public void Write<T>(IntPtr address, T value) where T : unmanaged
     {
         _logger.Debug("Write {Type} to 0x{Address:X16}.", typeof(T), address);
 
         if (_processHandle == IntPtr.Zero)
             throw new InvalidOperationException($"Process with ID {_processId} is not open.");
 
-        int size = Marshal.SizeOf<T>();
-        byte[] buffer = new byte[size];
-
-        IntPtr ptr = Marshal.AllocHGlobal(size);
-        try
-        {
-            Marshal.StructureToPtr(value, ptr, false);
-            Marshal.Copy(ptr, buffer, 0, size);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(ptr);
-        }
-
-        if (!WriteProcessMemory(_processHandle, address, buffer, size, out _))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error(),
-                $"Failed to write memory to address 0x{address:X16} in process {_processId}.");
-        }
+        var span = MemoryMarshal.CreateReadOnlySpan(ref value, 1);
+        Write(address, MemoryMarshal.AsBytes(span));
     }
 
     /// <summary>
